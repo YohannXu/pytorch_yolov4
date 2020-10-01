@@ -19,6 +19,8 @@ device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('
 
 
 class YOLOLoss(nn.Module):
+
+    @type_check(object, EasyDict)
     def __init__(self, cfg):
         super(YOLOLoss, self).__init__()
         self.base_anchors = torch.tensor(cfg.YOLO.ANCHORS, dtype=torch.float32).to(device)
@@ -46,6 +48,7 @@ class YOLOLoss(nn.Module):
             anchors.append(anchor)
         self.anchors = torch.stack(anchors, dim=0).to(device)
 
+    @type_check(object, torch.Tensor, torch.Tensor)
     def wh_iou(self, anchors, targets):
         """
         anchors: n x 2
@@ -58,6 +61,7 @@ class YOLOLoss(nn.Module):
         inter = torch.min(anchors[:, 0][:, None], w[None, :]) * torch.min(anchors[:, 1][:, None], h[None, :])  # n x m
         return inter / (anchor_area[:, None] + target_area[None, :] - inter)  # n x m
 
+    @type_check(object, torch.Tensor, torch.Tensor, str)
     def iou(self, boxes1, boxes2, iou_type):
         """
         boxes1: xywh, pred
@@ -96,6 +100,7 @@ class YOLOLoss(nn.Module):
             alpha = v / (1 - iou + v + 1e-16)
         return iou - (rho2 / c2 + v * alpha)
 
+    @type_check(object, torch.Tensor, torch.Tensor)
     def ciou(self, boxes1, boxes2):
         b1x1 = (boxes1[:, 0] - boxes1[:, 2] * 0.5)
         b1y1 = (boxes1[:, 1] - boxes1[:, 3] * 0.5)
@@ -122,11 +127,11 @@ class YOLOLoss(nn.Module):
             alpha = v / (1 - iou + v + 1e-16)
         return iou - (rho2 / c2 + v * alpha)
 
+    @type_check(object, list, list, list)
     def forward(self, preds, targets, cats):
         iou_losses = 0.0
         obj_losses = 0.0
         cls_losses = 0.0
-        num_targets = 1
         for index, pred in enumerate(preds):
             b, c, h, w = pred.shape
             # b x c x h x w -> b x 3 x (n + 5) x h x w -> b x 3 x h x w x (n + 5)
@@ -135,7 +140,6 @@ class YOLOLoss(nn.Module):
 
             # 得到预测box
             box_pred = torch.zeros_like(pred[..., :4])
-#            box_pred[..., :2] = pred[..., :2].sigmoid() * 2 - 0.5
             box_pred[..., :2] = pred[..., :2].sigmoid() * self.xy_scales[index] - 0.5 * (self.xy_scales[index] - 1)
             box_pred[..., 2:] = pred[..., 2:4].exp() * anchor.view(1, self.num_anchors, 1, 1, 2)
             obj_pred = pred[..., 4].sigmoid()
@@ -208,12 +212,6 @@ class YOLOLoss(nn.Module):
             obj_neg_t = torch.zeros_like(obj_neg_pred)
             obj_neg_loss = self.bce(obj_neg_pred, obj_neg_t)
 
-#            try:
-#                print(obj_pos_pred.max(), obj_neg_pred.max())
-#            except:
-#                pass
-#            print(obj_pos_pred)
-#            print(obj_pos_loss, obj_neg_loss)
             obj_loss = self.obj_scale * obj_pos_loss + self.noobj_scale * obj_neg_loss
 
             # 计算cls loss
@@ -222,18 +220,10 @@ class YOLOLoss(nn.Module):
             cls_gt = torch.zeros_like(cls_pred)
             cls_gt[torch.arange(cls_pred.shape[0]), cats[t_id] - 1] = 1
             cls_loss = self.bce(cls_pred, cls_gt)
-#            cls_loss = self.ce(cls_pred, cats[t_id] - 1)
 
-#            if boxes.shape[0] > 0:
-#                iou_loss = iou_loss / boxes.shape[0] / 4
-#                cls_loss = cls_loss / boxes.shape[0] / self.num_classes
-#            obj_loss = obj_loss / obj_pred.numel()
             iou_losses += iou_loss
             obj_losses += obj_loss
             cls_losses += cls_loss
-
-            num_target = t_id.numel()
-        num_targets += num_target
 
         loss = {
             'iou_loss': iou_losses,
@@ -242,11 +232,6 @@ class YOLOLoss(nn.Module):
         }
 
         return loss
-
-
-class YOLOLossLayer(nn.Module):
-    def __init__(self, cfg):
-        super(YOLOLossLayer, self).__init__()
 
 
 class LabelSmoothingLoss(nn.Module):
@@ -269,165 +254,3 @@ class LabelSmoothingLoss(nn.Module):
             return loss.sum()
         if self.reduction == 'mean':
             return loss.mean()
-
-
-# class YOLOLoss(nn.Module):
-#     def __init__(self, cfg):
-#         super(YOLOLoss, self).__init__()
-#         self.cfg = cfg
-#         self.anchors = torch.tensor(cfg.DATASET.ANCHORS, dtype=torch.float32).to(device)
-#         self.anchors_masks = cfg.DATASET.ANCHORS_MASKS
-#         self.reduction = cfg.DATASET.REDUCTION
-#         self.num_classes = cfg.DATASET.NUM_CLASSES
-#         self.num_anchors = cfg.DATASET.NUM_ANCHORS
-#         self.coord_scale = cfg.YOLO.COORD_SCALE
-#         self.obj_scale = cfg.YOLO.OBJ_SCALE
-#         self.noobj_scale = cfg.YOLO.NOOBJ_SCALE
-#         self.class_scale = cfg.YOLO.CLASS_SCALE
-#         self.iou_thresh = cfg.YOLO.IOU_THRESH
-# 
-#         self.bce = nn.BCELoss(reduction='none').to(device)
-#         self.smooth_l1 = nn.SmoothL1Loss(reduction='none').to(device)
-#         self.ce = nn.CrossEntropyLoss(reduction='sum').to(device)
-# 
-#     def iou(self, boxes, targets):
-#         """
-#         计算预测bbox和真实bbox之间的iou
-#         """
-#         boxes = boxes.view(-1, 4)  # num_anchors * h * w x 4
-#         x_lt = torch.max(boxes[:, 0][:, None], targets[:, 0][None, :])
-#         y_lt = torch.max(boxes[:, 1][:, None], targets[:, 1][None, :])
-#         x_rb = torch.min(boxes[:, 2][:, None], targets[:, 2][None, :])
-#         y_rb = torch.min(boxes[:, 3][:, None], targets[:, 3][None, :])
-# 
-#         inter = (x_rb - x_lt).clamp(0) * (y_rb - y_lt).clamp(0)
-#         area1 = (boxes[:, 2] - boxes[:, 0]).clamp(0) * (boxes[:, 3] - boxes[:, 1]).clamp(0)
-#         area2 = (targets[:, 2] - targets[:, 0]) * (targets[:, 3] - targets[:, 1])
-#         ious = inter / (area1[:, None] + area2[None, :] - inter)
-# 
-#         return ious
-# 
-#     def intersection(self, anchors, targets):
-#         """
-#         计算anchors与targets之间的iou
-#         anchors: Tensor, num_anchors x 2
-#         targets: Tensor, n x 4
-#         """
-#         anchor_area = anchors[:, 0] * anchors[:, 1]
-#         w = targets[:, 2] - targets[:, 0]
-#         h = targets[:, 3] - targets[:, 1]
-#         target_area = w * h
-#         inter = torch.min(anchors[:, 0][:, None], w[None, :]) * torch.min(anchors[:, 1][:, None], h[None, :])
-#         ious = inter / (anchor_area[:, None] + target_area[None, :] - inter)
-# 
-#         return ious
-# 
-#     def forward(self, preds, targets, cats):
-#         """
-#         Args:
-#             preds: list[Tensor], b x num_anchors * (num_classes + 5) x h x w
-#             targets: list[Tensor], n x 4, 每张图片的真实边界框坐标
-#             cats: list[Tensor], n, 每张图片的真实边界框类别
-#         """
-#         iou_loss_sum = 0
-#         obj_loss_sum = 0
-#         cls_loss_sum = 0
-#         index = 1
-#         num_targets = 1
-#         for anchors_masks, pred, reduction in zip(self.anchors_masks, preds, self.reduction):
-#             anchors = self.anchors[anchors_masks, :]
-#             anchors = anchors / reduction
-#             b, c, h, w = pred.shape
-#             pred = pred.reshape(b, self.num_anchors, -1, h * w).permute(0, 1, 3, 2)  # b x num_anchors x hw x (num_classes + 5)
-#             offset_pred = torch.zeros_like(pred[..., :4])
-#             offset_pred[..., :2] = pred[..., :2].sigmoid()
-#             offset_pred[..., 2:4] = pred[..., 2:4]
-#             iou_pred = pred[..., 4].sigmoid()
-#             class_pred = pred[..., 5:]
-# 
-#             logger.debug('obj pred, level: {}, min: {:.4f}, max: {:.4f}'.format(index, iou_pred.min().item(), iou_pred.max().item()))
-#             c_pred = F.softmax(class_pred, dim=-1)
-#             logger.debug('cls_pred, level: {}, min: {:.4f}, max: {:.4f}'.format(index, c_pred.min().item(), c_pred.max().item()))
-#             index += 1
-# 
-#             # 得到预测boxes
-#             boxes = torch.zeros_like(offset_pred)  # b x num_anchors x hw x 4
-#             xs = torch.arange(w, dtype=torch.float32).to(device)
-#             ys = torch.arange(h, dtype=torch.float32).to(device)
-#             ys, xs = torch.meshgrid(xs, ys)
-#             boxes[..., 0] = offset_pred[..., 0].detach() + xs.reshape(-1)
-#             boxes[..., 1] = offset_pred[..., 1].detach() + ys.reshape(-1)
-#             boxes[..., 2] = offset_pred[..., 2].detach().exp() * anchors[:, 0:1]
-#             boxes[..., 3] = offset_pred[..., 3].detach().exp() * anchors[:, 1:2]
-#             boxes[..., :2] -= 0.5 * boxes[..., 2:4]
-#             boxes[..., 2:4] += boxes[..., :2]
-# 
-#             offset_mask = torch.zeros(b, self.num_anchors, h * w, 1).to(device)
-#             offset_gt = torch.zeros(b, self.num_anchors, h * w, 4).to(device)
-#             iou_mask = torch.zeros(b, self.num_anchors, h * w).to(device)
-#             iou_neg_mask = torch.ones(b, self.num_anchors, h * w).to(device)
-#             iou_gt = torch.zeros(b, self.num_anchors, h * w).to(device)
-#             class_mask = torch.zeros(b, self.num_anchors, h * w).to(device)
-#             class_gt = torch.zeros(b, self.num_anchors, h * w).to(device)
-# 
-#             for i in range(b):
-#                 target = targets[i] / reduction
-#                 iou_box_gt = self.iou(boxes[i], target)
-#                 # 若box与任意一个target之间的iou大于阈值
-#                 mask = (iou_box_gt > self.iou_thresh).sum(1) > 0
-#                 iou_neg_mask[i][mask.view_as(iou_neg_mask[i])] = 0
-# 
-#                 # 找出与每个target iou最大的anchor
-#                 iou_anchor_gt = self.intersection(self.anchors / reduction, target)  # num_anchors x num_target
-#                 _, best_anchors = iou_anchor_gt.max(dim=0)  # num_target
-# 
-#                 target[:, 2:4] = target[:, 2:4] - target[:, :2]
-#                 target[:, :2] += 0.5 * target[:, 2:4]
-#                 for j in range(target.shape[0]):
-#                     if best_anchors[j] in anchors_masks:
-#                         cur_n = anchors_masks.index(best_anchors[j])
-#                     else:
-#                         continue
-#                     nx = target[j, 0].floor().int()
-#                     ny = target[j, 1].floor().int()
-# 
-#                     offset_mask[i, cur_n, ny * w + nx, 0] = 2 - target[j, 2] * target[j, 3] / (h * w)
-#                     iou_mask[i, cur_n, ny * w + nx] = 1
-#                     iou_neg_mask[i, cur_n, ny * w + nx] = 0
-#                     class_mask[i, cur_n, ny * w + nx] = 1
-# 
-#                     offset_gt[i, cur_n, ny * w + nx, 0] = target[j, 0] - nx
-#                     offset_gt[i, cur_n, ny * w + nx, 1] = target[j, 1] - ny
-#                     offset_gt[i, cur_n, ny * w + nx, 2] = torch.log(target[j, 2] / anchors[cur_n, 0])
-#                     offset_gt[i, cur_n, ny * w + nx, 3] = torch.log(target[j, 3] / anchors[cur_n, 1])
-#                     iou_gt[i, cur_n, ny * w + nx] = 1
-#                     class_gt[i, cur_n, ny * w + nx] = cats[i][j] - 1
-# 
-#             coord_loss_center = 2.0 * self.coord_scale * (self.bce(offset_pred[..., :2], offset_gt[..., :2]) * offset_mask).sum()
-#             coord_loss_wh = 3.0 * self.coord_scale * (self.smooth_l1(offset_pred[..., 2:], offset_gt[..., 2:]) * offset_mask).sum()
-#             coord_loss = coord_loss_center + coord_loss_wh
-#             iou_pos_loss = self.obj_scale * (self.bce(iou_pred, iou_gt) * iou_mask).sum()
-#             iou_neg_loss = self.noobj_scale * (self.bce(iou_pred, iou_gt) * iou_neg_mask).sum()
-#             iou_loss = iou_pos_loss + iou_neg_loss
-# 
-#             class_mask = class_mask > 0
-#             cls = class_pred[class_mask]
-#             cls_gt = class_gt[class_mask].long()
-#             if cls.numel():
-#                 class_loss = self.class_scale * self.ce(cls, cls_gt)
-#             else:
-#                 class_loss = torch.tensor(0.0, device=device)
-# 
-#             iou_loss_sum += coord_loss
-#             obj_loss_sum += iou_loss
-#             cls_loss_sum += class_loss
-# 
-#             num_targets += iou_mask.sum()
-# 
-#         loss = {
-#             'iou_loss': iou_loss_sum / num_targets,
-#             'obj_loss': obj_loss_sum / num_targets,
-#             'cls_loss': cls_loss_sum / num_targets
-#         }
-# 
-#         return loss

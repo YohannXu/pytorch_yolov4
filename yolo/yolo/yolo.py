@@ -72,97 +72,10 @@ class YOLO(nn.Module):
 
         return np.array(keep)
 
-#    def process(self, preds):
-#        boxes_list, scores_list = [], []
-#        for anchors, output, reduction in zip(self.anchors, preds, self.reduction):
-#            anchors = anchors / reduction
-#            pred = output.reshape(output.size(0), self.num_anchors, -1, output.size(2) * output.size(3)).permute(0, 1, 3, 2)  # b x num_anchors x hw x (num_classes + 5)
-##            pred[..., :2] = torch.sigmoid(pred[..., :2])
-##            boxes = pred[..., :4]
-#            boxes = torch.cat([torch.sigmoid(pred[..., :2]), pred[..., 2:4]], dim=3)
-#            iou_preds = torch.sigmoid(pred[..., 4])
-#            class_preds = F.softmax(pred[..., 5:], dim=-1)
-##            class_preds = pred[..., 5:].sigmoid()
-#
-#            # 得到预测boxes
-##            xs = torch.arange(w, dtype=torch.float32).to(device)
-##            ys = torch.arange(h, dtype=torch.float32).to(device)
-##            ys, xs = torch.meshgrid(xs, ys)
-##
-##            ys = ys.reshape(-1).unsqueeze(0).unsqueeze(0).repeat(1, self.num_anchors, 1)
-##            xs = xs.reshape(-1).unsqueeze(0).unsqueeze(0).repeat(1, self.num_anchors, 1)
-#
-#            grid_x = np.expand_dims(np.expand_dims(np.expand_dims(np.linspace(0, output.size(3) - 1, output.size(3)), axis=0).repeat(output.size(2), 0), axis=0), axis=0).repeat(self.num_anchors, 1)
-#            grid_y = np.expand_dims(np.expand_dims(np.expand_dims(np.linspace(0, output.size(2) - 1, output.size(2)), axis=1).repeat(output.size(3), 1), axis=0), axis=0).repeat(self.num_anchors, 1)
-#            grid_x = grid_x.reshape(pred.size(0), pred.size(1), pred.size(2))
-#            grid_y = grid_y.reshape(pred.size(0), pred.size(1), pred.size(2))
-#
-#            anchor_w = np.expand_dims(anchors[:, 0:1], 0).repeat(output.size(2) * output.size(3), 2)
-#            anchor_h = np.expand_dims(anchors[:, 1:2], 0).repeat(output.size(2) * output.size(3), 2)
-#
-##            boxes[..., 0] = boxes[..., 0] + xs.reshape(-1)
-##            boxes[..., 1] = boxes[..., 1] + ys.reshape(-1)
-##            boxes[..., 2] = boxes[..., 2].exp() * anchors[:, 0:1]
-##            boxes[..., 3] = boxes[..., 3].exp() * anchors[:, 1:2]
-#
-##            x1 = boxes[..., 0] + xs
-##            y1 = boxes[..., 1] + ys
-##            x2 = torch.exp(boxes[:, :, :, 2]) * torch.tensor(anchors[:, 0:1], dtype=torch.float32, device=device)
-##            y2 = torch.exp(boxes[:, :, :, 3]) * torch.tensor(anchors[:, 1:2], dtype=torch.float32, device=device)
-#            xs = boxes[..., 0] + torch.tensor(grid_x, device=device, dtype=torch.float32)
-#            ys = boxes[..., 1] + torch.tensor(grid_y, device=device, dtype=torch.float32)
-#
-#            ws = torch.exp(boxes[..., 2]) * torch.tensor(anchor_w, device=device, dtype=torch.float32)
-#            hs = torch.exp(boxes[..., 3]) * torch.tensor(anchor_h, device=device, dtype=torch.float32)
-##            bboxes = torch.stack([x1, y1, x2, y2], dim=3)
-#
-##            boxes[..., 0::2] = boxes[..., 0::2] / w
-##            boxes[..., 1::2] = boxes[..., 1::2] / h
-##            boxes[..., :2] -= 0.5 * boxes[..., 2:4]
-##            boxes[..., 2:4] += boxes[..., :2]
-#
-##            ax1 = bboxes[..., 0] / w
-##            ay1 = bboxes[..., 1] / h
-##            ax2 = bboxes[..., 2] / w
-##            ay2 = bboxes[..., 3] / h
-##            bbboxes = torch.stack([ax1, ay1, ax2, ay2], dim=3)
-#            xs = xs / output.size(3)
-#            ys = ys / output.size(2)
-#            ws = ws / output.size(3)
-#            hs = hs / output.size(2)
-#
-##            bx1 = bbboxes[..., 0] - 0.5 * bbboxes[..., 2]
-##            by1 = bbboxes[..., 1] - 0.5 * bbboxes[..., 3]
-##            bx2 = bx1 + bbboxes[..., 2]
-##            by2 = by1 + bbboxes[..., 3]
-##            bbbboxes = torch.stack([bx1, by1, bx2, by2], dim=3)
-#            x1 = xs - 0.5 * ws
-#            y1 = ys - 0.5 * hs
-#            x2 = x1 + ws
-#            y2 = y1 + hs
-#            boxes = torch.stack([x1, y1, x2, y2], dim=3)
-#
-#            scores = iou_preds.unsqueeze(-1) * class_preds
-#
-#            boxes_list.append(boxes)
-#            scores_list.append(scores)
-##        return boxes_list, scores_list
-#
-#        concat_boxes = torch.cat(boxes_list, dim=2)
-#        concat_scores = torch.cat(scores_list, dim=2)
-#
-#        return concat_boxes, concat_scores
-
     def post_process(self, boxes, scores):
         b, c, h, w = boxes.shape
-#        boxes = boxes.reshape(b, self.num_anchors, c // self.num_anchors, 4)
-#        scores = scores.reshape(b, self.num_anchors, c // self.num_anchors, 80)
 
         detections_per_level = []
-#        if torch.is_tensor(boxes):
-#            boxes = boxes.cpu().numpy()
-#        if torch.is_tensor(scores):
-#            scores = scores.cpu().numpy()
         score_threshs = scores > self.score_thresh
 
         if torch.is_tensor(boxes):
@@ -301,7 +214,6 @@ class YOLOLayer(nn.Module):
         boxes[..., 2:4] += boxes[..., :2]
 
         scores = conf_preds.unsqueeze(-1) * class_preds
-#        print('max score:', scores.max())
 
         return boxes, scores
 
