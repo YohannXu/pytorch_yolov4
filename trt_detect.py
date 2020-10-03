@@ -120,7 +120,7 @@ def main(engine_path, image_path, image_size):
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
         for b, p, l in zip(box, prob, label):
-            if p > 0.1:
+            if p > 0.3:
                 cv2.rectangle(image, (b[0], b[1]), (b[2], b[3]), (0, 255, 0), 2)
                 y = b[1] - 10
                 if b[1] < 10:

@@ -146,3 +146,9 @@ python trt_detect.py
 | tensorrt |   416    |      |
 
 ## 7 测试结果
+
+## 8 Reference
+
+- https://github.com/AlexeyAB/darknet
+- https://github.com/Tianxiaomo/pytorch-YOLOv4
+
