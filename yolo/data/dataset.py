@@ -2,14 +2,13 @@
 # Author: yohannxu
 # Email: yuhannxu@gmail.com
 # CreateTime: 2020-08-17 17:02:33
-# Description: dataset.py
+# Description: 数据加载相关
 
 import json
+import math
 import os
 import random
 from glob import glob
-import numpy as np
-import math
 
 import cv2
 import torch
@@ -32,9 +31,9 @@ class COCODataset(Dataset):
     def __init__(self, cfg, transforms=None, is_train=True):
         """
         Args:
-            cfg: str, 配置文件
+            cfg: 配置文件
             transforms: 图片预处理
-            is_train: bool, 训练还是验证
+            is_train: 是否处于训练模式
         """
         super(COCODataset, self).__init__()
         self.is_train = is_train
@@ -75,11 +74,16 @@ class COCODataset(Dataset):
 
     @type_check(object, int)
     def __getitem__(self, idx):
+        # 只有训练时才会启用mosaic数据增强
         if self.use_mosaic and self.is_train:
             img_id = self.ids[idx]
+            # 获得额外随机3张图片id
             img_ids = [img_id] + [self.ids[i] for i in random.sample(range(len(self)), 3)]
+            # 获得4张图片的文件名
             image_names = [self.coco.loadImgs(ids=img_id)[0]['file_name'] for img_id in img_ids]
+            # 读取4张图片
             images = [cv2.cvtColor(cv2.imread(os.path.join(self.root, image_name)), cv2.COLOR_BGR2RGB) for image_name in image_names]
+            # 提取出annotation中与目标检测相关的部分
             targets = [self.coco.imgToAnns[img_id] for img_id in img_ids]
             bboxes = []
             cats = []
@@ -95,12 +99,12 @@ class COCODataset(Dataset):
                 bboxes.append(bbox)
                 cats.append(cat)
             data = {
-                    'image': images,
-                    'bbox': bboxes,
-                    'cat': cats,
-                    'name': image_names[0],
-                    'img_id': img_ids[0]
-                    }
+                'image': images,
+                'bbox': bboxes,
+                'cat': cats,
+                'name': image_names[0],
+                'img_id': img_ids[0]
+            }
         else:
             img_id = self.ids[idx]
             image_name = self.coco.loadImgs(ids=img_id)[0]['file_name']
@@ -131,7 +135,13 @@ class COCODataset(Dataset):
 
         return data
 
+    @type_check(object, int)
     def get_info(self, index):
+        """
+        获取图片信息
+        Args:
+            index: 图片索引
+        """
         img_id = self.ids[index]
         info = self.coco.imgs[img_id]
         return info
@@ -146,7 +156,7 @@ class InferenceDataset(Dataset):
     def __init__(self, image_dir, transforms=None):
         """
         Args:
-            image_dir: str, 需要推理的图片文件夹路径
+            image_dir: 需要推理的图片文件夹路径
             transforms: 图片预处理
         """
         super(InferenceDataset, self).__init__()
@@ -176,6 +186,7 @@ class InferenceDataset(Dataset):
 class DataSampler(BatchSampler):
     """
     加载数据时的Sampler
+    与torch.utils.data.DataLoader配合使用
     """
 
     @type_check(object, Dataset, EasyDict, int, bool)
@@ -184,7 +195,7 @@ class DataSampler(BatchSampler):
         Args:
             dataset: 数据集
             cfg: 配置文件
-            start_iter: 当前迭代次数
+            start_iter: 初始迭代次数
             is_train: 训练还是验证
         """
 
@@ -231,16 +242,23 @@ class DataSampler(BatchSampler):
 class Collater():
     """
     用于拼接一个batch中的数据
+    与torch.utils.data.DataLoader配合使用
     """
 
     @type_check(object, EasyDict, bool)
     def __init__(self, cfg, is_train_or_val=True):
+        """
+        Args:
+            cfg: 配置文件
+            is_train_or_val: 是否处于训练或验证模式
+        """
         self.cfg = cfg
         self.is_train_or_val = is_train_or_val
 
     @type_check(object, list)
     def __call__(self, batch):
         if self.is_train_or_val:
+            # 预处理后的图片
             origin_images = [item['image'] for item in batch]
             bboxes = [item['bbox'] for item in batch]
             cats = [item['cat'] for item in batch]
@@ -249,15 +267,17 @@ class Collater():
             img_ids = [item['img_id'] for item in batch]
             offsets = [item['offset'] for item in batch]
             inds = torch.cat(
-                    [
-                        torch.full((len(bbox), 1), i, dtype=torch.long) for i, bbox in enumerate(bboxes)
-                        ]
-                    )
+                [
+                    torch.full((len(bbox), 1), i, dtype=torch.long) for i, bbox in enumerate(bboxes)
+                ]
+            )
             bboxes = torch.cat(bboxes, dim=0)
             bboxes = torch.cat([bboxes, inds], dim=-1)
             cats = torch.cat(cats)
         else:
+            # 原始图片
             ori_images = [item['ori_image'] for item in batch]
+            # 预处理后的图片
             origin_images = [item['image'] for item in batch]
             ratios = [item['ratio'] for item in batch]
             names = [item['name'] for item in batch]

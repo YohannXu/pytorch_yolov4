@@ -2,21 +2,14 @@
 # Author: yohannxu
 # Email: yuhannxu@gmail.com
 # CreateTime: 2020-08-11 18:06:20
-# Description: pan.py
+# Description: PAN
 
-import os
-import numpy as np
-import pandas as pd
-import cv2
-from glob import glob
-from tqdm import tqdm
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+from easydict import EasyDict
 
 from ..layers import ConvBnActivation, Upsample
 from ..utils import type_check
-from easydict import EasyDict
 
 
 class PAN(nn.Module):
@@ -26,8 +19,14 @@ class PAN(nn.Module):
 
     @type_check(object, EasyDict)
     def __init__(self, cfg):
+        """
+        Args:
+            cfg: 配置文件
+        """
+
         super(PAN, self).__init__()
         ac_type = cfg.PAN.ACTIVATION_FN
+
         # FPN
         self.conv1_1 = ConvBnActivation(2048, 512, 1, 1, 0, ac_type)
         self.conv1_2 = ConvBnActivation(512, 1024, 3, 1, 1, ac_type)

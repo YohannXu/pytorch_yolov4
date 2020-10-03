@@ -2,14 +2,14 @@
 # Author: yohannxu
 # Email: yuhannxu@gmail.com
 # CreateTime: 2020-08-10 17:24:07
-# Description: darknet.py
+# Description: 网络backbone
 
 import torch
 import torch.nn as nn
+from easydict import EasyDict
 
 from ..layers import ConvBnActivation
 from ..utils import type_check
-from easydict import EasyDict
 
 
 class ShortcutBlock(nn.Module):
@@ -28,6 +28,11 @@ class ShortcutBlock(nn.Module):
 
     @type_check(object, int, str)
     def __init__(self, index, ac_type):
+        """
+        Args:
+            index: 当前block所属的layer block的索引
+            ac_type: 激活函数类型
+        """
         super(ShortcutBlock, self).__init__()
         if index == 1:
             self.conv1 = ConvBnActivation(64, 32, 1, 1, 0, ac_type)
@@ -69,6 +74,12 @@ class LayerBlock(nn.Module):
 
     @type_check(object, list, int, str)
     def __init__(self, num_layers, index, ac_type):
+        """
+        Args:
+            num_layers: 当前block中的shortcut block数量
+            index: 当前layer block的索引
+            ac_type: 激活函数类型
+        """
         super(LayerBlock, self).__init__()
         channel = 32 * 2 ** (index - 1)
 
@@ -108,6 +119,11 @@ class LayerBlock(nn.Module):
 
 
 class CSPDarkNet53(nn.Module):
+    """
+    CSPDarkNet53网络层定义
+    包含1个stem层和5个layer block层
+    每个layer block层中包含一定数量的shortcut block层
+    """
 
     @type_check(object, EasyDict)
     def __init__(self, cfg):

@@ -2,7 +2,7 @@
 # Author: yohannxu
 # Email: yuhannxu@gmail.com
 # CreateTime: 2020-08-10 17:23:41
-# Description: utils.py
+# Description: 工具
 
 import os
 from collections import deque
@@ -19,6 +19,7 @@ def type_check(*types):
     Args:
         *types: 目标函数的参数类型
     """
+
     def decorate(func):
         sig = signature(func)
         # 获取目标函数的参数名和参数类型
@@ -43,35 +44,6 @@ def type_check(*types):
     return decorate
 
 
-model_urls = {
-    50: 'https://download.pytorch.org/models/resnet50-19c8e357.pth',
-    101: 'https://download.pytorch.org/models/resnet101-5d3b4d8f.pth',
-    152: 'https://download.pytorch.org/models/resnet152-b121ed2d.pth'
-}
-
-
-@type_check(int)
-def load_state_dict_from_url(num_layers):
-    weights = {}
-    weight = torch.hub.load_state_dict_from_url(model_urls[num_layers])
-
-    for name, value in weight.items():
-        if name == 'conv1.weight':
-            name = 'stem.conv.weight'
-        if name == 'bn1.weight':
-            name = 'stem.bn.weight'
-        if name == 'bn1.bias':
-            name = 'stem.bn.bias'
-        if name == 'bn1.running_mean':
-            name = 'stem.bn.running_mean'
-        if name == 'bn1.running_var':
-            name = 'stem.bn.running_var'
-        weight.requires_grad = True
-        weights[name] = value
-
-    return weights
-
-
 def last_checkpoint(cfg):
     """
     返回最新权重文件名
@@ -81,9 +53,7 @@ def last_checkpoint(cfg):
     if final_model in checkpoints:
         return final_model
     if checkpoints:
-        checkpoints = sorted(checkpoints, key=lambda x: int(
-            os.path.basename(x).split('.')[0].split('_')[-1]
-        ))
+        checkpoints = sorted(checkpoints, key=lambda x: int(os.path.basename(x).split('.')[0].split('_')[-1]))
         return checkpoints[-1]
     return checkpoints
 
@@ -113,7 +83,12 @@ class SmoothAverage():
 
 
 class Metric(dict):
+    """
+    用于存放训练过程中的变量
+    """
+
     def __init__(self, metric=SmoothAverage, delimiter='    '):
+        # 此处需要手动添加
         self['iou_loss'] = metric()
         self['obj_loss'] = metric()
         self['cls_loss'] = metric()

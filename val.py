@@ -2,13 +2,13 @@
 # Author: yohannxu
 # Email: yuhannxu@gmail.com
 # CreateTime: 2020-08-21 15:41:55
-# Description: val.py
+# Description: 计算mAP
 
 import json
 import sys
 from collections import OrderedDict
-import numpy as np
 
+import numpy as np
 import torch
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
@@ -16,9 +16,9 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from default import cfg
+from model import Model
 from yolo.data import COCODataset, Collater, DataSampler, build_transforms
 from yolo.utils import last_checkpoint
-from model import Model
 
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 cpu_device = torch.device('cpu')
@@ -70,7 +70,7 @@ def val(model):
     image_ids = list(sorted(predictions.keys()))
     predictions = [predictions[i] for i in image_ids]
 
-    # 将类别索引映射回原始状态
+    # 将类别索引映射回原始索引
     map_classes = {v: int(k) for k, v in dataset.classes.items()}
 
     coco_det = []
@@ -79,7 +79,6 @@ def val(model):
             continue
         bbox[:, 0::2] /= ratio[0]
         bbox[:, 1::2] /= ratio[1]
-#        x_min, y_min, x_max, y_max = bbox.split(1, dim=-1)
         x_min, y_min, x_max, y_max = np.array_split(bbox, 4, axis=-1)
         # xyxy -> xywh
         bbox = np.concatenate((x_min, y_min, x_max - x_min + 1, y_max - y_min + 1), axis=-1)
@@ -179,8 +178,5 @@ if __name__ == '__main__':
     else:
         print('weight not found')
         sys.exit()
-
-#    model.load_state_dict(torch.load('yolov4.pth')['state_dict'])
-#    model.load_state_dict(torch.load('voc1_saved_models/model_56000.pth')['state_dict'])
 
     val(model)

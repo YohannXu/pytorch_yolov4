@@ -2,27 +2,25 @@
 # Author: yohannxu
 # Email: yuhannxu@gmail.com
 # CreateTime: 2020-08-12 00:25:02
-# Description: head.py
+# Description: 网络head
 
-import os
-import numpy as np
-import pandas as pd
-import cv2
-from glob import glob
-from tqdm import tqdm
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+from easydict import EasyDict
 
 from ..layers import ConvBnActivation
 from ..utils import type_check
-from easydict import EasyDict
 
 
 class YOLOHead(nn.Module):
 
     @type_check(object, EasyDict)
     def __init__(self, cfg):
+        """
+        Args:
+            cfg: 配置文件
+        """
+
         super(YOLOHead, self).__init__()
         ac_type = cfg.HEAD.ACTIVATION_FN
 
@@ -39,6 +37,11 @@ class YOLOHead(nn.Module):
 
     @type_check(object, torch.Tensor, torch.Tensor, torch.Tensor)
     def forward(self, x1, x2, x3):
+        """
+        Args:
+            x1, x2, x3: neck的输出
+        """
+
         x1 = self.conv1_1(x1)
         x1 = self.conv1_2(x1)
 

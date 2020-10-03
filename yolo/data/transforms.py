@@ -2,14 +2,14 @@
 # Author: yohannxu
 # Email: yuhannxu@gmail.com
 # CreateTime: 2020-08-17 17:02:38
-# Description: transforms.py
+# Description: 各种数据预处理
 
-import torch
-import random
 import math
+import random
+
 import cv2
 import numpy as np
-
+import torch
 import torchvision.transforms.functional as F
 from easydict import EasyDict
 from PIL import Image
@@ -22,42 +22,28 @@ from ..utils import type_check
 def build_transforms(cfg, is_train=True):
     """
     数据预处理
+    Args:
+        cfg: 配置文件
+        is_train: 是否处于训练模式
     """
-    mean = cfg.DATASET.MEAN
-    std = cfg.DATASET.STD
 
     if is_train:
-        size = cfg.DATASET.SIZE
-        flip_horizontal_prob = cfg.DATASET.FLIP_HORIZONTAL_PROB
-        brightness = cfg.DATASET.BRIGHTNESS
-        contrast = cfg.DATASET.CONTRAST
-        saturation = cfg.DATASET.SATURATION
-        hue = cfg.DATASET.HUE
-        eraser_size = cfg.DATASET.ERASER_SIZE
-        rotate_range = cfg.DATASET.ROTATE_RANGE
-
         transforms = T.Compose(
             [
                 MultiSizes(cfg),
                 Mosaic(cfg),
-                ColorJitter(
-                    brightness,
-                    contrast,
-                    saturation,
-                    hue
-                ),
-                RandomEraser(eraser_size),
-                Rotate(rotate_range),
-                RandomHorizontalFlip(flip_horizontal_prob),
-                Resize(size),
+                ColorJitter(cfg),
+                RandomEraser(cfg),
+                Rotate(cfg),
+                RandomHorizontalFlip(cfg),
+                Resize(cfg, is_train=True),
                 ToTensor(),
             ]
         )
     else:
-        size = cfg.DATASET.TEST_SIZE
         transforms = T.Compose(
             [
-                Resize(size),
+                Resize(cfg, is_train=False),
                 ToTensor(),
             ]
         )
@@ -66,13 +52,30 @@ def build_transforms(cfg, is_train=True):
 
 
 class MultiSizes():
+    """
+    多尺寸训练
+    """
+
+    @type_check(object, EasyDict)
     def __init__(self, cfg):
+        """
+        Args:
+            cfg: 配置文件
+        """
+
         self.cfg = cfg
         self.sizes = cfg.DATASET.SIZES
         self.frequency = cfg.DATASET.FREQUENCY
         self.time_to_change = self.frequency
 
+    @type_check(object, dict)
     def __call__(self, inputs):
+        """
+        每隔frequency次改变图片缩放尺寸
+        Args:
+            inputs: 输入数据
+        """
+
         self.time_to_change -= 1
         if self.time_to_change == 0:
             self.cfg.DATASET.SIZE = random.choice(self.sizes)
@@ -81,28 +84,52 @@ class MultiSizes():
 
 
 class Mosaic():
+    """
+    将4张图片拼接在一起
+    """
+
+    @type_check(object, EasyDict, int)
     def __init__(self, cfg, interpolation=Image.BILINEAR):
+        """
+        Args:
+            cfg: 配置文件
+            interpolation: 插值算法
+        """
+
         self.resize_range = cfg.DATASET.MOSAIC_RESIZE_RANGE
+        self.color = cfg.DATASET.MOSAIC_COLOR
         self.size = cfg.DATASET.SIZE
 
+    @type_check(object, dict)
     def __call__(self, inputs):
+        """
+        Args:
+            inputs: 输入数据
+        """
+
         images = inputs['image']
         bboxes = inputs['bbox']
         cats = inputs['cat']
 
+        # 如果images不是列表格式, 表明未启用mosaic数据增强
         if type(images) is not list:
             return inputs
 
-        new_image = np.zeros((self.size, self.size, 3), dtype=np.uint8)
+        # 空白图片, 用于拼接
+        new_image = np.full((self.size, self.size, 3), self.color, dtype=np.uint8)
         new_bboxes = []
         new_cats = []
+        # 生成随机中心点
         cx, cy = [random.randint(self.size // 4, self.size // 4 * 3) for _ in range(2)]
+        # 生成随机缩放因子
         resize_ratio = random.uniform(self.resize_range[0], self.resize_range[1])
+        # 计算得到缩放后的尺寸
         size = int(self.size * resize_ratio)
 
         for index, (image, bbox, cat) in enumerate(zip(images, bboxes, cats)):
             w, h = image.shape[:2]
 
+            # 对每张图片根据缩放后的尺寸进行缩放
             if w > h:
                 resize_h = int(size / w * h)
                 image = cv2.resize(image, (resize_h, size))
@@ -114,9 +141,11 @@ class Mosaic():
                 ratio_w = resize_w / w
                 ratio_h = size / h
 
+            # 对bbox的宽高乘上对应缩放因子
             bbox[:, 0::2] *= ratio_w
             bbox[:, 1::2] *= ratio_h
 
+            # 计算4张图片的拼接位置
             h, w = image.shape[:2]
             if index == 0:
                 x1a, y1a, x2a, y2a = max(cx - w, 0), max(cy - h, 0), cx, cy
@@ -132,13 +161,20 @@ class Mosaic():
                 x1b, y1b, x2b, y2b = 0, 0, min(x2a - x1a, w), min(y2a - y1a, h)
             new_image[y1a: y2a, x1a: x2a] = image[y1b: y2b, x1b: x2b]
 
+            # 得到每张图片bbox的位移
             offset_w = x1a - x1b
             offset_h = y1a - y1b
+            # bbox加上位移
             bbox[:, 0::2] += offset_w
             bbox[:, 1::2] += offset_h
 
-            out_mask = (bbox[:, [0, 2]] <= 0).all(1) | (bbox[:, [0, 2]] >= self.size).all(1) | (bbox[:, [1, 3]] <= 0).all(1) | (bbox[:, [1, 3]] >= self.size).all(1)
+            # 得到位于图片外的bbox bool mask
+            out_mask = (bbox[:, [0, 2]] <= 0).all(1) | (bbox[:, [0, 2]] >= self.size).all(
+                1) | (bbox[:, [1, 3]] <= 0).all(1) | (bbox[:, [1, 3]] >= self.size).all(1)
+            # 得到位于图片内的bbox bool mask
             mask = ~out_mask
+            # 得到对应bbox和类别索引
+            # TODO 此处clamp的max值有极小概率会导致报错, 可能减去一个较小值
             bbox = bbox[mask].clamp(0, self.size)
             cat = cat[mask]
             new_bboxes.append(bbox)
@@ -158,19 +194,28 @@ class Resize():
     图片缩放
     """
 
-    @type_check(object, int, int)
-    def __init__(self, size, interpolation=Image.BILINEAR):
+    @type_check(object, EasyDict, bool, int)
+    def __init__(self, cfg, is_train=True, interpolation=Image.BILINEAR):
         """
         Args:
             cfg, 配置文件
-            sizes: 多尺度
             interpolation: 插值算法
         """
-        self.size = size
+
+        if is_train:
+            self.size = cfg.DATASET.SIZE
+        else:
+            self.size = cfg.DATASET.TEST_SIZE
+        self.color = cfg.DATASET.RESIZE_COLOR
         self.interpolation = interpolation
 
     @type_check(object, dict)
     def __call__(self, inputs):
+        """
+        Args:
+            inputs: 输入数据
+        """
+
         image = inputs['image']
 
         w, h = image.size
@@ -190,13 +235,15 @@ class Resize():
             offset_w = random.randint(0, self.size - resize_w)
             offset_h = 0
 
-        new_image = Image.new('RGB', (self.size, self.size))
+        # 在图片四周进行填充, 使其尺寸符合网络输入要求
+        new_image = Image.new('RGB', (self.size, self.size), tuple(self.color))
         new_image.paste(image, (offset_w, offset_h))
 
         inputs['image'] = new_image
         inputs['ratio'] = [ratio_w, ratio_h]
         inputs['offset'] = [offset_w, offset_h]
 
+        # 根据填充情况调整bbox坐标
         if 'bbox' in inputs:
             bbox = inputs['bbox']
             bbox[:, 0::2] *= ratio_w
@@ -213,18 +260,30 @@ class RandomHorizontalFlip():
     随机水平翻转
     """
 
-    @type_check(object, float)
-    def __init__(self, prob=0.5):
-        self.prob = prob
+    @type_check(object, EasyDict)
+    def __init__(self, cfg):
+        """
+        Args:
+            cfg: 配置文件
+        """
+
+        self.prob = cfg.DATASET.FLIP_HORIZONTAL_PROB
 
     @type_check(object, dict)
     def __call__(self, inputs):
+        """
+        Args:
+            inputs: 输入数据
+        """
+
         image = inputs['image']
         bbox = inputs['bbox']
 
         if random.random() < self.prob:
+            # 翻转图片
             image = image.transpose(Image.FLIP_LEFT_RIGHT)
             w, h = image.size
+            # 翻转bbox
             bbox[:, 0] = w - bbox[:, 0]
             bbox[:, 2] = w - bbox[:, 2]
             bbox[:, [0, 2]] = bbox[:, [2, 0]]
@@ -240,15 +299,18 @@ class ColorJitter():
     随机色彩调整
     """
 
-    @type_check(object, float, float, float, float)
-    def __init__(self, brightness=0, contrast=0, saturation=0, hue=0):
+    @type_check(object, EasyDict)
+    def __init__(self, cfg):
         """
         Args:
-            brightness:, float, 亮度
-            contrast: float, 对比度
-            saturation: float, 饱和度
-            hue: float, 色调
+            cfg: 配置文件
         """
+
+        brightness = cfg.DATASET.BRIGHTNESS
+        contrast = cfg.DATASET.CONTRAST
+        saturation = cfg.DATASET.SATURATION
+        hue = cfg.DATASET.HUE
+
         self.color_jitter = T.ColorJitter(
             brightness=brightness,
             contrast=contrast,
@@ -258,6 +320,11 @@ class ColorJitter():
 
     @type_check(object, dict)
     def __call__(self, inputs):
+        """
+        Args:
+            inputs: 输入数据
+        """
+
         image = inputs['image']
         image = self.color_jitter(image)
         inputs['image'] = image
@@ -269,16 +336,28 @@ class RandomEraser():
     """
     对每一个box进行随机擦除
     如果擦除区域太大，可能会遮盖目标的重要部分
-    如果擦除区域太小，又不会起什么作用
+    如果擦除区域太小，可能不会起太大作用
     """
-    @type_check(object, list, float, tuple)
-    def __init__(self, size_ratio, prob=0.5, color=(0, 0, 0)):
-        self.prob = prob
-        self.size_ratio = size_ratio
-        self.color = color
+
+    @type_check(object, EasyDict)
+    def __init__(self, cfg):
+        """
+        Args:
+            cfg: 配置文件
+        """
+
+        self.size_ratio = cfg.DATASET.ERASER_SIZE_RATIO
+        self.prob = cfg.DATASET.ERASER_PROB
+        self.color = cfg.DATASET.ERASER_COLOR
 
     @type_check(object, dict)
     def __call__(self, inputs):
+        """
+        在每个bbox范围内, 随机进行小范围的擦除
+        Args:
+            inputs: 输入数据
+        """
+
         image = inputs['image']
         bbox = inputs['bbox']
 
@@ -286,12 +365,14 @@ class RandomEraser():
             if random.random() > self.prob:
                 w = box[2] - box[0]
                 h = box[3] - box[1]
-                size_w = random.randint(int(w * self.size_ratio[0]), int(w * self.size_ratio[1]))
-                size_h = random.randint(int(h * self.size_ratio[0]), int(h * self.size_ratio[1]))
-                range_w = random.randint(int(box[0]), int(box[2] - size_w))
-                range_h = random.randint(int(box[1]), int(box[3] - size_h))
-                rec = Image.new('RGB', (size_w, size_h))
-                image.paste(rec, (range_w, range_h))
+                # 擦除区域的宽高
+                eraser_w = random.randint(int(w * self.size_ratio[0]), int(w * self.size_ratio[1]))
+                eraser_h = random.randint(int(h * self.size_ratio[0]), int(h * self.size_ratio[1]))
+                # 擦除坐标
+                eraser_x = random.randint(int(box[0]), int(box[2] - eraser_w))
+                eraser_y = random.randint(int(box[1]), int(box[3] - eraser_h))
+                rec = Image.new('RGB', (eraser_w, eraser_h), tuple(self.color))
+                image.paste(rec, (eraser_x, eraser_y))
 
         inputs['image'] = image
         return inputs
@@ -369,20 +450,35 @@ class Rotate():
     """
     旋转图片
     """
-    @type_check(object, list, float)
-    def __init__(self, angle, prob=0.5):
-        self.prob = prob
-        self.angle = angle
+
+    @type_check(object, EasyDict)
+    def __init__(self, cfg):
+        """
+        Args:
+            cfg: 配置文件
+        """
+
+        self.range = cfg.DATASET.ROTATE_RANGE
+        self.prob = cfg.DATASET.ROTATE_PROB
 
     @type_check(object, dict)
     def __call__(self, inputs):
+        """
+        Args:
+            inputs: 输入数据
+        """
+
         if random.random() > self.prob:
             image = inputs['image']
             w, h = image.size
             bbox = inputs['bbox']
 
-            angle = random.randint(self.angle[0], self.angle[1])
+            # 得到随机角度
+            angle = random.randint(self.range[0], self.range[1])
+            # 旋转图片
             image = image.rotate(angle, expand=True)
+
+            # 旋转bbox
             sin = math.sin(math.pi / 180 * abs(angle))
             cos = math.cos(math.pi / 180 * abs(angle))
             new_bbox = torch.zeros_like(bbox)
@@ -411,6 +507,11 @@ class ToTensor():
 
     @type_check(object, dict)
     def __call__(self, inputs):
+        """
+        Args:
+            inputs: 输入数据
+        """
+
         image = inputs['image']
 
         image = F.to_tensor(image)
@@ -427,6 +528,11 @@ class ToPILImage():
 
     @type_check(object, dict)
     def __call__(self, inputs):
+        """
+        Args:
+            inputs: 输入数据
+        """
+
         image = inputs['image']
         image = F.to_pil_image(image)
         inputs['image'] = image
@@ -440,18 +546,23 @@ class Normalize():
     如果先进行rotate、resize等操作，会存在填充背景，是否需要忽略对背景的标准化？
     """
 
-    @type_check(object, list, list)
-    def __init__(self, mean, std):
+    @type_check(object, EasyDict)
+    def __init__(self, cfg):
         """
         Args:
-            mean: float, 均值
-            std: float, 标准差
+            cfg: 配置文件
         """
-        self.mean = mean
-        self.std = std
+
+        self.mean = cfg.DATASET.MEAN
+        self.std = cfg.DATASET.STD
 
     @type_check(object, dict)
     def __call__(self, inputs):
+        """
+        Args:
+            inputs: 输入数据
+        """
+
         image = inputs['image']
 
         image = F.normalize(image, self.mean, self.std)

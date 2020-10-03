@@ -2,21 +2,14 @@
 # Author: yohannxu
 # Email: yuhannxu@gmail.com
 # CreateTime: 2020-08-11 17:42:31
-# Description: spp.py
+# Description: 空间金字塔池化
 
-import os
-import numpy as np
-import pandas as pd
-import cv2
-from glob import glob
-from tqdm import tqdm
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+from easydict import EasyDict
 
 from ..layers import ConvBnActivation
 from ..utils import type_check
-from easydict import EasyDict
 
 
 class SPP(nn.Module):
@@ -26,6 +19,11 @@ class SPP(nn.Module):
 
     @type_check(object, EasyDict)
     def __init__(self, cfg):
+        """
+        Args:
+            cfg: 配置文件
+        """
+
         super(SPP, self).__init__()
         ac_type = cfg.SPP.ACTIVATION_FN
         self.conv1 = ConvBnActivation(1024, 512, 1, 1, 0, ac_type)
@@ -40,6 +38,7 @@ class SPP(nn.Module):
         """
         对尺寸最低的features进行三次池化, 对池化结果进行concat
         """
+
         x = self.conv1(x1)
         x = self.conv2(x)
         x = self.conv3(x)

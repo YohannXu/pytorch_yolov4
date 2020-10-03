@@ -4,19 +4,12 @@
 # CreateTime: 2020-08-19 18:23:28
 # Description: load.py
 
-import os
 import numpy as np
-import pandas as pd
-import cv2
-from glob import glob
-from tqdm import tqdm
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-
-from model import Model
 from default import cfg
+from model import Model
 
 model = Model(cfg, pretrained=False)
 
@@ -96,7 +89,6 @@ with open('yolov4.weights', 'rb') as f:
         except Exception:
             pass
         conv = None
-    print(index)
 
     for k, v in model.state_dict().items():
         if k == 'head.conv1_1.conv.weight':
@@ -143,11 +135,6 @@ with open('yolov4.weights', 'rb') as f:
             v.data.copy_(torch.from_numpy(preserve_weights[2][4722943: 4984063]).view_as(v))
         if k == 'head.conv3_2.bias':
             v.data.copy_(torch.from_numpy(preserve_weights[2][4722688: 4722943]))
-
-
-for i, (n, v) in enumerate(model.state_dict().items()):
-    if len(v.shape):
-        print(i, n, v.shape, v.mean(), v.std())
 
 model = model.cuda()
 torch.save({'state_dict': model.state_dict()}, 'yolov4.pth')

@@ -4,45 +4,23 @@
 # CreateTime: 2020-09-07 16:14:00
 # Description: trt_detect.py
 
-import torch
-from torchvision.transforms.functional import to_tensor
 import time
+
 import cv2
-from model import Model
-from yolo.yolo import OnnxPostprocess
-from default import cfg
 import numpy as np
-from PIL import Image
-import tensorrt as trt
 import pycuda.driver as cuda
 import pycuda.autoinit
+import tensorrt as trt
+import torch
+from PIL import Image
+from torchvision.transforms.functional import to_tensor
+
+from categories import COCO_CATEGORIES as CATEGORIES
+from default import cfg
+from yolo.yolo import OnnxPostprocess
 
 trt_logger = trt.Logger()
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-
-CATEGORIES = [
-        '__background__',
-        'aeroplane',
-        'bicycle',
-        'bird',
-        'boat',
-        'bottle',
-        'bus',
-        'car',
-        'cat',
-        'chair',
-        'cow',
-        'diningtable',
-        'dog',
-        'horse',
-        'motorbike',
-        'person',
-        'pottedplant',
-        'sheep',
-        'sofa',
-        'train',
-        'tvmonitor'
-]
 
 
 def get_engine(engine_path):
@@ -99,14 +77,12 @@ def main(engine_path, image_path, image_size):
 
         ori_image = Image.open(image_path)
         w, h = ori_image.size
+        image = ori_image.resize((image_size, image_size))
 
         for i in range(2):
             t0 = time.time()
-            image = ori_image.resize((image_size, image_size))
-#            t_image = np.array(image).transpose(1, 2, 0)[None, :] / 255.0
-#            t_image = np.ascontiguousarray(t_image.astype(np.float32))
             t_image = to_tensor(image).unsqueeze(0).cpu().numpy()
-            print(t_image.dtype, t_image.shape)
+            t1 = time.time()
             inputs, outputs, bindings, stream = buffers
             inputs[0].host = t_image
 
@@ -116,17 +92,19 @@ def main(engine_path, image_path, image_size):
             stream.synchronize()
 
             outputs = [out.host for out in outputs]
-
-#            for output in outputs:
-#                print(output.shape)
-#            outputs = [torch.tensor(output.reshape(1, 255, 52 // 2 ** i, 52 // 2 ** i), device=device, dtype=torch.float32) for i, output in enumerate(outputs)]
-#            prediction = model.yolo(outputs)[0]
+            t2 = time.time()
 
             boxes = outputs[0].reshape(1, 3, -1, 4)
             scores = outputs[1].reshape(1, 3, -1, 80)
             prediction = post_process(boxes, scores)[0]
+            t3 = time.time()
 
-            print(time.time() - t0)
+            print('-----------------------------------')
+            print('           Preprocess : %f' % (t1 - t0))
+            print('      Model Inference : %f' % (t2 - t1))
+            print('      Post Processing : %f' % (t3 - t2))
+            print('                 total: %f' % (t3 - t0))
+            print('-----------------------------------')
 
         box = prediction[:, :4]
         prob = prediction[:, 4]
@@ -143,14 +121,12 @@ def main(engine_path, image_path, image_size):
 
         for b, p, l in zip(box, prob, label):
             if p > 0.1:
-                print(b)
                 cv2.rectangle(image, (b[0], b[1]), (b[2], b[3]), (0, 255, 0), 2)
                 y = b[1] - 10
                 if b[1] < 10:
                     y += 30
                 cv2.putText(image, '{}_{:.2f}'.format(CATEGORIES[l], p), (b[0], y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
         cv2.imwrite('prediction_trt.jpg', image)
-        print('total', time.time() - t0)
 
 
 if __name__ == '__main__':
@@ -158,4 +134,3 @@ if __name__ == '__main__':
     image_path = 'dog.jpg'
     image_size = 416
     main(engine_path, image_path, image_size)
-#    get_engine(engine_path)

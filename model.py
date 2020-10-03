@@ -4,20 +4,13 @@
 # CreateTime: 2020-08-19 04:18:10
 # Description: models.py
 
-import os
-import numpy as np
-import pandas as pd
-import cv2
-from glob import glob
-from tqdm import tqdm
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from apex import amp
 
 from yolo.backbone import CSPDarkNet53
-from yolo.neck import SPP, PAN
 from yolo.head import YOLOHead
+from yolo.neck import PAN, SPP
 from yolo.yolo import YOLO, OnnxYOLO
 
 
@@ -32,7 +25,7 @@ class Model(nn.Module):
 
         if pretrained:
             print('loading imagenet pretrained weights!')
-            self.backbone.load_state_dict(torch.load('yolov4_backbone.pth')['state_dict'])
+            self.backbone.load_state_dict(torch.load(cfg.TRAIN.PRETRAIN_WEIGHT)['state_dict'])
 
         if cfg.TRAIN.MIX_LEVEL == 'O1':
             self.yolo.loss.forward = amp.half_function(self.yolo.loss.forward)

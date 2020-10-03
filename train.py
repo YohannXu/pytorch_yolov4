@@ -2,16 +2,15 @@
 # Author: yohannxu
 # Email: yuhannxu@gmail.com
 # CreateTime: 2020-08-19 04:17:06
-# Description: train.py
+# Description: 训练代码
 
-import cv2
-import matplotlib.pyplot as plt
 import datetime
 import logging
 import os
-import time
 import shutil
 import sys
+import time
+
 import torch
 import torch.optim as optim
 from apex import amp
@@ -21,26 +20,29 @@ from torch.utils.tensorboard import SummaryWriter
 from default import cfg
 from model import Model
 from yolo.data import COCODataset, Collater, DataSampler, build_transforms
-from yolo.utils import Metric, WarmupMultiStepLR, last_checkpoint, WarmupCosineLR
+from yolo.utils import Metric, WarmupMultiStepLR, last_checkpoint
 
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 
 
 def train():
     is_train = True
+
+    # 模型与优化器
     model = Model(cfg, pretrained=True).to(device)
     batch_size = cfg.DATASET.BATCH_SIZE
     mini_batch_size = cfg.DATASET.MINI_BATCH_SIZE
-
     lr = cfg.OPTIMIZER.BASE_LR / batch_size
     weight_decay = cfg.OPTIMIZER.WEIGHT_DECAY * batch_size
     optimizer = optim.SGD(model.parameters(), lr, momentum=cfg.OPTIMIZER.MOMENTUM, weight_decay=weight_decay)
-#    model, optimizer = amp.initialize(model, optimizer, opt_level=cfg.TRAIN.MIX_LEVEL)
+    model, optimizer = amp.initialize(model, optimizer, opt_level=cfg.TRAIN.MIX_LEVEL)
 
+    # 加载权重
     checkpoint = last_checkpoint(cfg)
     if 'model_final.pth' in checkpoint:
         print('training has completed!')
         sys.exit()
+
     if checkpoint:
         checkpoint = torch.load(checkpoint)
         model.load_state_dict(checkpoint['state_dict'])
@@ -53,21 +55,12 @@ def train():
         step = 1
         global_step = 1
 
+    # 学习率下降策略
     scheduler = WarmupMultiStepLR(
         optimizer,
         cfg,
         step - 2
     )
-
-#    scheduler = WarmupCosineLR(
-#        optimizer,
-#        cfg.TRAIN.NUM_BATCHES,
-#        cfg.OPTIMIZER.WARMUP_FACTOR,
-#        cfg.OPTIMIZER.WARMUP_ITERS,
-#        cfg.OPTIMIZER.WARMUP_METHOD,
-#        cfg.OPTIMIZER.COSINE_GAMMA,
-#        step - 2
-#    )
 
     # 加载训练数据集
     dataset = COCODataset(
@@ -88,6 +81,7 @@ def train():
         shutil.rmtree(cfg.TRAIN.LOGDIR)
     writer = SummaryWriter(log_dir=cfg.TRAIN.LOGDIR)
 
+    # 日志
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
     formatter = logging.Formatter(
@@ -108,8 +102,6 @@ def train():
         images = data['images'].to(device)
         bboxes = data['bboxes'].to(device)
         cats = data['cats'].to(device)
-#        bboxes = [bbox.to(device) for bbox in data['bboxes']]
-#        cats = [cat.to(device) for cat in data['cats']]
 
         losses = model(images, bboxes, cats)
 
@@ -120,22 +112,10 @@ def train():
             global_step += 1
             continue
 
-        loss.backward()
-#        with amp.scale_loss(loss, optimizer) as scaled_loss:
-#            scaled_loss.backward()
+        with amp.scale_loss(loss, optimizer) as scaled_loss:
+            scaled_loss.backward()
 
         if global_step % backward_step == 0:
-
-#            max_grad, min_grad = 0, 0
-#            for p in model.parameters():
-#                max_g = p.grad.max()
-#                min_g = p.grad.min()
-#                if max_g > max_grad:
-#                    max_grad = max_g
-#                if min_g < min_grad:
-#                    min_grad = min_g
-#            print('max_grad:', max_grad.item(), 'min_grad:', min_grad.item())
-
             optimizer.step()
             optimizer.zero_grad()
             scheduler.step()
@@ -143,11 +123,6 @@ def train():
 
         batch_time = time.time() - start
         start = time.time()
-
-#        losses['iou_loss'] /= mini_batch_size
-#        losses['obj_loss'] /= mini_batch_size
-#        losses['cls_loss'] /= mini_batch_size
-#        loss /= mini_batch_size
 
         metric.update('iou_loss', losses['iou_loss'])
         metric.update('obj_loss', losses['obj_loss'])

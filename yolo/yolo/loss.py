@@ -2,18 +2,15 @@
 # Author: yohannxu
 # Email: yuhannxu@gmail.com
 # CreateTime: 2020-08-13 15:59:34
-# Description: loss.py
-
+# Description: 损失函数
 
 import math
-import matplotlib.pyplot as plt
-import cv2
-import torch.nn.functional as F
 
 import torch
 import torch.nn as nn
-from ..utils import type_check
 from easydict import EasyDict
+
+from ..utils import type_check
 
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 
@@ -36,10 +33,6 @@ class YOLOLoss(nn.Module):
         self.noobj_scale = cfg.YOLO.NOOBJ_SCALE
         self.class_scale = cfg.YOLO.CLASS_SCALE
         self.bce = nn.BCELoss(reduction='sum')
-        self.smooth_ce = LabelSmoothingLoss(reduction='sum')
-        self.ce = nn.CrossEntropyLoss(reduction='sum')
-        self.smooth_p = 0.95
-        self.smooth_n = 0.05
 
         # 对每一层anchors除以对应的降采样因子
         anchors = []
@@ -51,23 +44,34 @@ class YOLOLoss(nn.Module):
     @type_check(object, torch.Tensor, torch.Tensor)
     def wh_iou(self, anchors, targets):
         """
-        anchors: n x 2
-        targets: m x 2
+        计算anchors和targets宽高之间的iou
+        Args:
+            anchors: n x 2
+            targets: m x 2
+        Return:
+            ious: n x m
         """
-        anchor_area = anchors[:, 0] * anchors[:, 1]  # n
-        w = targets[:, 2] - targets[:, 0]  # m
-        h = targets[:, 3] - targets[:, 1]  # m
-        target_area = w * h  # m
-        inter = torch.min(anchors[:, 0][:, None], w[None, :]) * torch.min(anchors[:, 1][:, None], h[None, :])  # n x m
-        return inter / (anchor_area[:, None] + target_area[None, :] - inter)  # n x m
+
+        anchor_area = anchors[:, 0] * anchors[:, 1]
+        w = targets[:, 2] - targets[:, 0]
+        h = targets[:, 3] - targets[:, 1]
+        target_area = w * h
+        inter = torch.min(anchors[:, 0][:, None], w[None, :]) * torch.min(anchors[:, 1][:, None], h[None, :])
+        ious = inter / (anchor_area[:, None] + target_area[None, :] - inter)
+        return ious
 
     @type_check(object, torch.Tensor, torch.Tensor, str)
     def iou(self, boxes1, boxes2, iou_type):
         """
-        boxes1: xywh, pred
-        boxes2: xywh, target
+        Args:
+            boxes1: xywh, 预测值, n x 4
+            boxes2: xywh, 真实值, m x 4
+        Return:
+            n x m
         """
+
         assert iou_type in ['iou', 'giou', 'diou', 'ciou']
+
         b1x1 = (boxes1[:, 0] - boxes1[:, 2] * 0.5)[:, None]
         b1y1 = (boxes1[:, 1] - boxes1[:, 3] * 0.5)[:, None]
         b1x2 = (boxes1[:, 0] + boxes1[:, 2] * 0.5)[:, None]
@@ -100,8 +104,20 @@ class YOLOLoss(nn.Module):
             alpha = v / (1 - iou + v + 1e-16)
         return iou - (rho2 / c2 + v * alpha)
 
-    @type_check(object, torch.Tensor, torch.Tensor)
-    def ciou(self, boxes1, boxes2):
+    @type_check(object, torch.Tensor, torch.Tensor, str)
+    def iou_loss(self, boxes1, boxes2, iou_type):
+        """
+        计算iou loss, 需要boxes1和boxes2的数量一致
+        Args:
+            boxes1: xywh, 预测值, n x 4
+            boxes2: xywh, 真实值, n x 4
+        Return:
+            n
+        """
+
+        assert iou_type in ['iou', 'giou', 'diou', 'ciou']
+        assert boxes1.shape[0] == boxes2.shape[0]
+
         b1x1 = (boxes1[:, 0] - boxes1[:, 2] * 0.5)
         b1y1 = (boxes1[:, 1] - boxes1[:, 3] * 0.5)
         b1x2 = (boxes1[:, 0] + boxes1[:, 2] * 0.5)
@@ -118,17 +134,31 @@ class YOLOLoss(nn.Module):
         union = area1 + area2 + 1e-16 - inter
         iou = inter / union
 
+        if iou_type == 'iou':
+            return iou
         cw = torch.max(b1x2, b2x2) - torch.min(b1x1, b2x1)
         ch = torch.max(b1y2, b2y2) - torch.min(b1y1, b2y1)
+        if iou_type == 'giou':
+            c_area = cw * ch + 1e-16
+            return iou - (c_area - union) / c_area
         c2 = cw ** 2 + ch ** 2 + 1e-16
         rho2 = (boxes1[:, 0] - boxes2[:, 0]) ** 2 + (boxes1[:, 1] - boxes2[:, 1]) ** 2
+        if iou_type == 'diou':
+            return iou - rho2 / c2
         v = (4 / math.pi ** 2) * (torch.atan(boxes2[:, 2] / boxes2[:, 3]) - torch.atan(boxes1[:, 2] / boxes1[:, 3])) ** 2
         with torch.no_grad():
             alpha = v / (1 - iou + v + 1e-16)
         return iou - (rho2 / c2 + v * alpha)
 
-    @type_check(object, list, list, list)
+    @type_check(object, list, torch.Tensor, torch.Tensor)
     def forward(self, preds, targets, cats):
+        """
+        Args:
+            preds: head的输出, 网络预测值
+            targets: 真实bbox
+            cats: 真实bbox对应的类别
+        """
+
         iou_losses = 0.0
         obj_losses = 0.0
         cls_losses = 0.0
@@ -145,23 +175,24 @@ class YOLOLoss(nn.Module):
             obj_pred = pred[..., 4].sigmoid()
             cls_pred = pred[..., 5:].sigmoid()
 
-            # 计算anchor与target之间的iou
             target = targets[:, :4] / self.reductions[index]
             target_id = targets[:, 4].long()
+            # 计算anchor与target之间的iou
             iou_a_t = self.wh_iou(anchor, target)
 
-            # 先得到最大的iou索引
+            # 先得到最大的iou对应的anchor索引
             _, best_anchor_ids = iou_a_t.max(0)
 
-            # 再得到除了最大超过阈值的索引
-            # 得到iou大于阈值的anchor target pair, 在yolov3中则是选取iou最大的anchor
+            # 再得到除了最大iou, 其他超过阈值的anchor索引
             a_id, t_id = torch.nonzero(iou_a_t > self.iou_thresh, as_tuple=False).T
 
+            # 将以上两类索引合并
             preserve_ids = []
             for t_index, best_anchor_id in enumerate(best_anchor_ids):
                 if best_anchor_id not in a_id[t_id == t_index]:
                     preserve_ids.append(t_index)
 
+            # 得到合并后的anchor和target索引
             a_id = torch.cat([a_id, best_anchor_ids[preserve_ids]])
             t_id = torch.cat([t_id, torch.arange(best_anchor_ids.shape[0], device=device)[preserve_ids]])
 
@@ -178,14 +209,13 @@ class YOLOLoss(nn.Module):
             # 得到gt box坐标
             tbox = torch.cat([txy, wh], dim=1)
 
+            # 得到预测box坐标
             boxes = box_pred[b_id, a_id, tj, ti]
 
             # 计算iou loss
-#            iou = self.iou(boxes, tbox, iou_type='ciou')
-            iou = self.ciou(boxes, tbox)
+            iou = self.iou_loss(boxes, tbox, iou_type='ciou')
             iou_loss = (1 - iou).sum() * self.coord_scale
 
-            # 计算obj loss
             iou_neg_mask = torch.ones(b, self.num_anchors, h, w)
             # 计算预测boxes和target之间的iou
             xs = torch.arange(w, dtype=torch.float32).to(device)
@@ -216,10 +246,9 @@ class YOLOLoss(nn.Module):
 
             # 计算cls loss
             cls_pred = cls_pred[b_id, a_id, tj, ti]
-#            cls_loss = self.smooth_ce(cls_pred, cats[t_id]) * self.class_scale
             cls_gt = torch.zeros_like(cls_pred)
             cls_gt[torch.arange(cls_pred.shape[0]), cats[t_id] - 1] = 1
-            cls_loss = self.bce(cls_pred, cls_gt)
+            cls_loss = self.bce(cls_pred, cls_gt) * self.class_scale
 
             iou_losses += iou_loss
             obj_losses += obj_loss
@@ -232,25 +261,3 @@ class YOLOLoss(nn.Module):
         }
 
         return loss
-
-
-class LabelSmoothingLoss(nn.Module):
-    def __init__(self, reduction='sum'):
-        super(LabelSmoothingLoss, self).__init__()
-        self.smoothing = 0.05
-        self.conf = 1 - self.smoothing
-        self.num_classes = 80
-        self.reduction = reduction
-
-    def forward(self, pred, target):
-        pred = pred.log_softmax(dim=-1)
-        with torch.no_grad():
-            true_dist = torch.zeros_like(pred)
-            true_dist.fill_(self.smoothing / (self.num_classes - 1))
-            true_dist.scatter_(1, target.unsqueeze(1) - 1, self.conf)
-        loss = torch.sum(-true_dist * pred, dim=-1)
-
-        if self.reduction == 'sum':
-            return loss.sum()
-        if self.reduction == 'mean':
-            return loss.mean()

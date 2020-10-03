@@ -12,120 +12,13 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
+from categories import COCO_CATEGORIES, VOC_CATEGORIES
 from default import cfg
 from model import Model
 from yolo.data import Collater, InferenceDataset, build_transforms
 from yolo.utils import last_checkpoint
 
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-
-CATEGORIES = [
-    "__background",
-    "person",
-    "bicycle",
-    "car",
-    "motorcycle",
-    "airplane",
-    "bus",
-    "train",
-    "truck",
-    "boat",
-    "traffic light",
-    "fire hydrant",
-    "stop sign",
-    "parking meter",
-    "bench",
-    "bird",
-    "cat",
-    "dog",
-    "horse",
-    "sheep",
-    "cow",
-    "elephant",
-    "bear",
-    "zebra",
-    "giraffe",
-    "backpack",
-    "umbrella",
-    "handbag",
-    "tie",
-    "suitcase",
-    "frisbee",
-    "skis",
-    "snowboard",
-    "sports ball",
-    "kite",
-    "baseball bat",
-    "baseball glove",
-    "skateboard",
-    "surfboard",
-    "tennis racket",
-    "bottle",
-    "wine glass",
-    "cup",
-    "fork",
-    "knife",
-    "spoon",
-    "bowl",
-    "banana",
-    "apple",
-    "sandwich",
-    "orange",
-    "broccoli",
-    "carrot",
-    "hot dog",
-    "pizza",
-    "donut",
-    "cake",
-    "chair",
-    "couch",
-    "potted plant",
-    "bed",
-    "dining table",
-    "toilet",
-    "tv",
-    "laptop",
-    "mouse",
-    "remote",
-    "keyboard",
-    "cell phone",
-    "microwave",
-    "oven",
-    "toaster",
-    "sink",
-    "refrigerator",
-    "book",
-    "clock",
-    "vase",
-    "scissors",
-    "teddy bear",
-    "hair drier",
-    "toothbrush",
-]
-
-# CATEGORIES = [
-#         '__background__',
-#         'aeroplane',
-#         'bicycle',
-#         'bird',
-#         'boat',
-#         'bottle',
-#         'bus',
-#         'car',
-#         'cat',
-#         'chair',
-#         'cow',
-#         'diningtable',
-#         'dog',
-#         'horse',
-#         'motorbike',
-#         'person',
-#         'pottedplant',
-#         'sheep',
-#         'sofa',
-#         'train',
-#         'tvmonitor'
-# ]
 
 
 def inference():
@@ -147,6 +40,14 @@ def inference():
     model = Model(cfg).to(device)
 
     checkpoint = last_checkpoint(cfg)
+    if 'voc' in checkpoint:
+        CATEGORIES = VOC_CATEGORIES
+    elif 'coco' in checkpoint:
+        CATEGORIES = COCO_CATEGORIES
+    else:
+        print('dataset not support!')
+        sys.exit()
+
     if checkpoint:
         print('loading {}'.format(checkpoint))
         checkpoint = torch.load(checkpoint)
@@ -154,8 +55,6 @@ def inference():
     else:
         print('weight not found')
         sys.exit()
-
-#    model.load_state_dict(torch.load('yolov4.pth')['state_dict'])
 
     model.eval()
     for data in dataloader:
@@ -167,7 +66,7 @@ def inference():
         offsets = data['offsets']
 
         with torch.no_grad():
-            detections = model(images)  # b x 90 x 7 x 7
+            detections = model(images)
 
         for ori_image, detection, size, ratio, name, offset in zip(ori_images, detections, sizes, ratios, names, offsets):
             box = detection[:, :4]

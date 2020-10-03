@@ -2,7 +2,7 @@
 # Author: yohannxu
 # Email: yuhannxu@gmail.com
 # CreateTime: 2020-08-11 17:38:46
-# Description: layer.py
+# Description: layer定义
 
 import torch
 import torch.nn as nn
@@ -31,6 +31,17 @@ class ConvBnActivation(nn.Module):
 
     @type_check(object, int, int, int, int, int, str, bool)
     def __init__(self, in_channel, out_channel, kernel_size=3, stride=1, padding=1, ac_type=None, bias=False):
+        """
+        Args:
+            in_channel: 输入通道数
+            out_channel: 输出通道数
+            kernel_size: 卷积核大小
+            stride: 卷积步长
+            padding: 卷积填充大小
+            ac_type: 激活函数类型
+            bias: 是否使用偏置
+        """
+
         super(ConvBnActivation, self).__init__()
 
         self.conv = nn.Conv2d(in_channel, out_channel, kernel_size, stride, padding, bias=bias)
