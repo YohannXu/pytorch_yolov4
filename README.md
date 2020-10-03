@@ -15,7 +15,7 @@ YOLOv4 implemented by pytorch
 
 ### 2.1 下载项目
 ```bash
-git clone https://github.com/YohannXu/pytorch_faster_rcnn.git && cd pytorch_faster_rcnn
+git clone https://github.com/YohannXu/pytorch_yolov4.git && cd pytorch_yolov4
 ```
 
 ### 2.2 安装apex
@@ -61,23 +61,23 @@ python voc2coco.py
 python load_backbone.py
 ```
 
-也可直接下载转换好的权重```yolov4_backbone.pth```: https://drive.google.com/file/d/1Dw4nysp0Siripd5UKLUAAtJTr3t6TICF/view?usp=sharing
+也可直接下载转换好的权重 ```yolov4_backbone.pth```: https://drive.google.com/file/d/1Dw4nysp0Siripd5UKLUAAtJTr3t6TICF/view?usp=sharing
 
 
 #### 3.2.2 yolov4权重
 
-先下载yolov4权重 ```yolov4.weights```:
+先下载yolov4权重 ```yolov4.weights```: https://drive.google.com/open?id=1cewMfusmPjYWbrnuJRuKhPMwRe_b9PaT
 
 然后使用load.py将权重转换为.pth文件。
 ```
 python load.py
 ```
 
-也可直接下载转换好的权重```yolov4.pth```:https://drive.google.com/file/d/1Ge6S-abBX_CE-4lwzMjGo1b7KYoCq9j6/view?usp=sharing
+也可直接下载转换好的权重 ```yolov4.pth```:https://drive.google.com/file/d/1Ge6S-abBX_CE-4lwzMjGo1b7KYoCq9j6/view?usp=sharing
 
 ### 3.3 配置文件
 
-修改```default.py```数据集路径, 预训练权重路径, 类别数量等参数。
+修改```default.py```中的数据集路径, 预训练权重路径, 类别数量等参数。
 
 ## 4 Usage
 
@@ -117,7 +117,9 @@ trtexec --onnx=yolov4.onnx --explicitBatch --saveEngine=yolov4_fp16.engine --wor
 ```
 
 ### tensorrt加速推理
+```
 python trt_detect.py
+```
 
 ## 5 训练结果
 
@@ -130,11 +132,13 @@ python trt_detect.py
 | RTX2070 | coco train2014   |    coco val2014   |  64  |    2    |     8000    |      ON      | 8.37%  | 24.02% |
 | RTX2070 | coco train2014   |    coco val2014   |  64  |    2    |    40000    |      ON      | %  | % |
 
-使用yolov4.pth进行测试。
+使用yolov4.pth在coco val2014数据集上进行验证。
 
 |  mAP   |  AP50  |  AP75  |  APs   |  APm   |  APl   |
 | :----: | :----: | :----: | :----: | :----: | :----: |
 | 46.25% | 72.20% | 50.18% | 26.61% | 51.72% | 59.22% |
+
+我自己的训练结果和官方的结果存在相当大的差距, 原因可能是因为训练时长不够, 官方的num_batches为500500, 并且还有很多功能尚未实现。
 
 
 ## 6 速度测试
@@ -151,4 +155,3 @@ python trt_detect.py
 
 - https://github.com/AlexeyAB/darknet
 - https://github.com/Tianxiaomo/pytorch-YOLOv4
-
