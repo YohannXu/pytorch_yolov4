@@ -2,6 +2,13 @@
 
 YOLOv4 implemented by pytorch
 
+- [x] CSPDarkNet53
+- [x] SPP
+- [x] PAN
+- [x] Mosaic data augment
+- [x] CIoU loss
+- [x] Eliminate grid sensitivity
+
 ## 1 Environment
 
 - python3.6
@@ -130,7 +137,7 @@ python trt_detect.py
 | RTX2070 | voc train2007+12 |    voc val2007    |  64  |    2    |     8000    |      OFF     | 15.37% | 40.19% |
 | RTX2070 | voc train2007+12 |    voc val2007    |  64  |    2    |     8000    |      ON      | 17.42% | 43.14% |
 | RTX2070 | coco train2014   |    coco val2014   |  64  |    2    |     8000    |      ON      | 8.37%  | 24.02% |
-| RTX2070 | coco train2014   |    coco val2014   |  64  |    2    |    40000    |      ON      | %  | % |
+| RTX2070 | coco train2014   |    coco val2014   |  64  |    2    |    40000    |      ON      | 16.53% | 39.67% |
 
 使用yolov4.pth在coco val2014数据集上进行验证。
 
@@ -143,13 +150,27 @@ python trt_detect.py
 
 ## 6 速度测试
 
-|   框架   | 图片尺寸 | 耗时 |
-| :------: | :------: | :--: |
-| pytorch  |   416    |      |
-|   onnx   |   416    |      |
-| tensorrt |   416    |      |
+|   框架   | 图片尺寸 |  耗时  |
+| :------: | :------: | :----: |
+| pytorch  |   416    | 0.038s |
+|   onnx   |   416    | 0.721s |
+| tensorrt |   416    | 0.018s |
 
 ## 7 测试结果
+
+左边使用我训练了40000轮的权重测试, 右边使用官方权重测试。
+
+![](imgs/1.jpg)
+
+![](imgs/2.jpg)
+
+![](imgs/3.jpg)
+
+![](imgs/4.jpg)
+
+![](imgs/5.jpg)
+
+![](imgs/6.jpg)
 
 ## 8 Reference
 

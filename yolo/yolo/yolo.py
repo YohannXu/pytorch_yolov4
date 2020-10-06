@@ -91,7 +91,7 @@ class YOLO(nn.Module):
                     probs[i + 1:][ious > self.nms_thresh] = -1
                 keep.append(i)
 
-        return np.array(keep)
+        return np.array(sorted_inds[keep])
 
     @type_check(object, list)
     def inference(self, preds):
@@ -180,9 +180,8 @@ class YOLOLayer(nn.Module):
         pred[..., :2] = pred[..., :2].sigmoid()
         boxes = pred[..., :4]
         conf_preds = pred[..., 4].sigmoid()
-        # 训练时用sigmoid, 测试时用softmax
-        # 也可自行替换为sigmoid
-        class_preds = F.softmax(pred[..., 5:], dim=-1)
+#        class_preds = F.softmax(pred[..., 5:], dim=-1)
+        class_preds = pred[..., 5:].sigmoid()
 
         xs = torch.arange(w, dtype=torch.float32).to(device)
         ys = torch.arange(h, dtype=torch.float32).to(device)
@@ -323,7 +322,7 @@ class OnnxPostprocess(nn.Module):
                     probs[i + 1:][ious > self.nms_thresh] = -1
                 keep.append(i)
 
-        return np.array(keep)
+        return np.array(sorted_inds[keep])
 
     def forward(self, boxes, scores):
         score_threshs = scores > self.score_thresh
